@@ -1,74 +1,124 @@
-"use client";
+'use client'
 
-import { Formik, Form, Field } from 'formik';
-import * as Yup from 'yup';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { createNote } from '@/lib/api';
-import { NoteTag } from '@/types/note';
-import css from './NoteForm.module.css';
+import { useEffect, useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import css from './NoteForm.module.css'
+import { useNoteStore, initialDraft } from '@/lib/store/noteStore'
+import { createNote, CreateNotePayload } from '@/lib/api'
+import type { NoteTag } from '@/types/note'
 
 export interface NoteFormProps {
-    onDone: () => void;
+    onDone?: () => void
 }
 
-const schema = Yup.object({
-    title: Yup.string().min(3).max(50).required(),
-    content: Yup.string().max(500),
-    tag: Yup.mixed<NoteTag>().oneOf(['Todo', 'Work', 'Personal', 'Meeting', 'Shopping']).required(),
-});
+const TAG_OPTIONS: NoteTag[] = ['Todo', 'Work', 'Personal', 'Meeting', 'Shopping']
 
 export default function NoteForm({ onDone }: NoteFormProps) {
-    const qc = useQueryClient();
-    const { mutateAsync, isPending } = useMutation({ mutationFn: createNote });
+    const router = useRouter()
+    const draft = useNoteStore(s => s.draft)
+    const setDraft = useNoteStore(s => s.setDraft)
+    const clearDraft = useNoteStore(s => s.clearDraft)
 
-    async function handleSubmit(values: { title: string; content: string; tag: NoteTag }) {
-        await mutateAsync(values);
-        await qc.invalidateQueries({ queryKey: ['notes'] });
-        onDone();
+    const [title, setTitle] = useState(draft.title ?? initialDraft.title)
+    const [content, setContent] = useState(draft.content ?? initialDraft.content)
+    const [tag, setTag] = useState<NoteTag>((draft.tag as NoteTag) ?? (initialDraft.tag as NoteTag))
+    const [submitting, setSubmitting] = useState(false)
+    const [errors, setErrors] = useState<{ title?: string; content?: string; tag?: string }>({})
+
+    useEffect(() => {
+        setDraft({ title, content, tag })
+    }, [title, content, tag, setDraft])
+
+    const isValid = useMemo(() => {
+        const e: typeof errors = {}
+        const t = title.trim()
+        if (!t) e.title = 'Title is required'
+        else if (t.length < 3) e.title = 'Title must be at least 3 characters'
+        else if (t.length > 50) e.title = 'Title must be at most 50 characters'
+        if (content.length > 500) e.content = 'Content must be at most 500 characters'
+        if (!TAG_OPTIONS.includes(tag)) e.tag = 'Invalid tag'
+        setErrors(e)
+        return Object.keys(e).length === 0
+    }, [title, content, tag])
+
+    const goBack = () => {
+        if (onDone) onDone()
+        else router.push('/notes/filter/All')
+    }
+
+    const onSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+        e.preventDefault()
+        if (!isValid || submitting) return
+        setSubmitting(true)
+        try {
+            const payload: CreateNotePayload = {
+                title: title.trim(),
+                content: content.trim(),
+                tag,
+            }
+            await createNote(payload)
+            clearDraft()
+            goBack()
+        } finally {
+            setSubmitting(false)
+        }
     }
 
     return (
-        <Formik
-            initialValues={{ title: '', content: '', tag: 'Todo' as NoteTag }}
-            validationSchema={schema}
-            onSubmit={handleSubmit}
-        >
-            {({ errors, touched, isValid }) => (
-                <Form className={css.form}>
-                    <div className={css.formGroup}>
-                        <label htmlFor="title">Title</label>
-                        <Field id="title" name="title" type="text" className={css.input} />
-                        <span className={css.error} role="alert">{touched.title && errors.title ? errors.title : ''}</span>
-                    </div>
+        <form className={css.form} onSubmit={onSubmit} noValidate>
+            <div className={css.formGroup}>
+                <label htmlFor="title">Title</label>
+                <input
+                    id="title"
+                    name="title"
+                    className={css.input}
+                    value={title}
+                    onChange={e => setTitle(e.target.value)}
+                    required
+                    minLength={3}
+                    maxLength={50}
+                />
+                <span className={css.error} role="alert">{errors.title || ''}</span>
+            </div>
 
-                    <div className={css.formGroup}>
-                        <label htmlFor="content">Content</label>
-                        <Field as="textarea" id="content" name="content" rows={8} className={css.textarea} />
-                        <span className={css.error} role="alert">{touched.content && errors.content ? errors.content : ''}</span>
-                    </div>
+            <div className={css.formGroup}>
+                <label htmlFor="content">Content</label>
+                <textarea
+                    id="content"
+                    name="content"
+                    className={css.textarea}
+                    rows={8}
+                    value={content}
+                    onChange={e => setContent(e.target.value)}
+                    maxLength={500}
+                />
+                <span className={css.error} role="alert">{errors.content || ''}</span>
+            </div>
 
-                    <div className={css.formGroup}>
-                        <label htmlFor="tag">Tag</label>
-                        <Field as="select" id="tag" name="tag" className={css.select}>
-                            <option value="Todo">Todo</option>
-                            <option value="Work">Work</option>
-                            <option value="Personal">Personal</option>
-                            <option value="Meeting">Meeting</option>
-                            <option value="Shopping">Shopping</option>
-                        </Field>
-                        <span className={css.error} role="alert">{touched.tag && errors.tag ? String(errors.tag) : ''}</span>
-                    </div>
+            <div className={css.formGroup}>
+                <label htmlFor="tag">Tag</label>
+                <select
+                    id="tag"
+                    name="tag"
+                    className={css.select}
+                    value={tag}
+                    onChange={e => setTag(e.target.value as NoteTag)}
+                >
+                    {TAG_OPTIONS.map(t => (
+                        <option key={t} value={t}>{t}</option>
+                    ))}
+                </select>
+                <span className={css.error} role="alert">{errors.tag || ''}</span>
+            </div>
 
-                    <div className={css.actions}>
-                        <button type="button" className={css.cancelButton} onClick={onDone}>
-                            Cancel
-                        </button>
-                        <button type="submit" className={css.submitButton} disabled={!isValid || isPending}>
-                            Create note
-                        </button>
-                    </div>
-                </Form>
-            )}
-        </Formik>
-    );
+            <div className={css.actions}>
+                <button type="button" className={css.cancelButton} onClick={goBack} disabled={submitting}>
+                    Cancel
+                </button>
+                <button type="submit" className={css.submitButton} disabled={submitting || !isValid}>
+                    {submitting ? 'Creating…' : 'Create note'}
+                </button>
+            </div>
+        </form>
+    )
 }

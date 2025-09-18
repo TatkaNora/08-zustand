@@ -1,14 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useDebounce } from "use-debounce";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import { fetchNotes } from "@/lib/api";
 import NoteList from "@/components/NoteList/NoteList";
 import Pagination from "@/components/Pagination/Pagination";
 import SearchBox from "@/components/SearchBox/SearchBox";
-import Modal from "@/components/Modal/Modal";
-import NoteForm from "@/components/NoteForm/NoteForm";
 import css from "./NotesClient.module.css";
 
 const PER_PAGE = 12;
@@ -16,7 +15,6 @@ const PER_PAGE = 12;
 export default function NotesClient({ tag }: { tag: string }) {
     const [page, setPage] = useState(1);
     const [search, setSearch] = useState("");
-    const [isOpen, setIsOpen] = useState(false);
     const [debouncedSearch] = useDebounce(search, 400);
 
     useEffect(() => {
@@ -40,16 +38,18 @@ export default function NotesClient({ tag }: { tag: string }) {
             <header className={css.toolbar}>
                 <SearchBox value={search} onChange={setSearch} />
                 {totalPages > 1 && (
-                    <Pagination currentPage={page} pageCount={totalPages} onPageChange={(p) => setPage(p)} />
+                    <Pagination
+                        currentPage={page}
+                        pageCount={totalPages}
+                        onPageChange={(p) => setPage(p)}
+                    />
                 )}
-                <button className={css.button} onClick={() => setIsOpen(true)}>Create note +</button>
+                <Link href="/notes/action/create" className={css.button}>
+                    Create note +
+                </Link>
             </header>
             {hasList && <NoteList notes={data!.notes} />}
-            {isOpen && (
-                <Modal onClose={() => setIsOpen(false)}>
-                    <NoteForm onDone={() => setIsOpen(false)} />
-                </Modal>
-            )}
         </div>
     );
 }
+
