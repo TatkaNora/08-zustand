@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import css from './NoteForm.module.css'
 import { useNoteStore, initialDraft } from '@/lib/store/noteStore'
 import { createNote, CreateNotePayload } from '@/lib/api'
@@ -15,6 +16,8 @@ const TAG_OPTIONS: NoteTag[] = ['Todo', 'Work', 'Personal', 'Meeting', 'Shopping
 
 export default function NoteForm({ onDone }: NoteFormProps) {
     const router = useRouter()
+    const queryClient = useQueryClient()
+
     const draft = useNoteStore(s => s.draft)
     const setDraft = useNoteStore(s => s.setDraft)
     const clearDraft = useNoteStore(s => s.clearDraft)
@@ -22,7 +25,6 @@ export default function NoteForm({ onDone }: NoteFormProps) {
     const [title, setTitle] = useState(draft.title ?? initialDraft.title)
     const [content, setContent] = useState(draft.content ?? initialDraft.content)
     const [tag, setTag] = useState<NoteTag>((draft.tag as NoteTag) ?? (initialDraft.tag as NoteTag))
-    const [submitting, setSubmitting] = useState(false)
     const [errors, setErrors] = useState<{ title?: string; content?: string; tag?: string }>({})
 
     useEffect(() => {
@@ -46,22 +48,24 @@ export default function NoteForm({ onDone }: NoteFormProps) {
         else router.push('/notes/filter/All')
     }
 
-    const onSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-        e.preventDefault()
-        if (!isValid || submitting) return
-        setSubmitting(true)
-        try {
-            const payload: CreateNotePayload = {
-                title: title.trim(),
-                content: content.trim(),
-                tag,
-            }
-            await createNote(payload)
+    const mutation = useMutation({
+        mutationFn: (payload: CreateNotePayload) => createNote(payload),
+        onSuccess: async () => {
             clearDraft()
+            await queryClient.invalidateQueries({ queryKey: ['notes'] })
             goBack()
-        } finally {
-            setSubmitting(false)
+        },
+    })
+
+    const onSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+        e.preventDefault()
+        if (!isValid || mutation.isPending) return
+        const payload: CreateNotePayload = {
+            title: title.trim(),
+            content: content.trim(),
+            tag,
         }
+        mutation.mutate(payload)
     }
 
     return (
@@ -112,11 +116,11 @@ export default function NoteForm({ onDone }: NoteFormProps) {
             </div>
 
             <div className={css.actions}>
-                <button type="button" className={css.cancelButton} onClick={goBack} disabled={submitting}>
+                <button type="button" className={css.cancelButton} onClick={goBack} disabled={mutation.isPending}>
                     Cancel
                 </button>
-                <button type="submit" className={css.submitButton} disabled={submitting || !isValid}>
-                    {submitting ? 'Creating…' : 'Create note'}
+                <button type="submit" className={css.submitButton} disabled={mutation.isPending || !isValid}>
+                    {mutation.isPending ? 'Creating…' : 'Create note'}
                 </button>
             </div>
         </form>
